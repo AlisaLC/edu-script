@@ -30,7 +30,7 @@ type VahedJobResponse struct {
 }
 
 const EduUrl = "https://my.edu.sharif.edu/api/reg"
-const AuthToken = "" // take from headers
+const AuthToken = "" // take from headers after login.
 
 var mu sync.Mutex
 var wg sync.WaitGroup
@@ -45,7 +45,7 @@ var vaheds = []*VahedRequest{
 		Course: "40441-1",
 		Units:  3,
 	},
-} // fill with your courses in the above format
+} // fill with your courses in the above format.
 
 func main() {
 	client := &http.Client{}
@@ -95,7 +95,7 @@ func findTimeDiff(client *http.Client) (time.Duration, error) {
 func reqToEdu(client *http.Client, request *VahedRequest) {
 	defer wg.Done()
 	req := initRequest(request)
-	mu.Lock()
+	mu.Lock() // remove if requests are slowed by the server. (currently it is.)
 	res, err := client.Do(req)
 	if err != nil {
 		fmt.Println(err)
@@ -123,7 +123,7 @@ func initRequest(request *VahedRequest) *http.Request {
 	req, _ := http.NewRequest("POST", EduUrl, payloadBuf)
 	req.Header.Set("Authorization", AuthToken)
 	req.Header.Set("Host", "my.edu.sharif.edu")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:104.0) Gecko/20100101 Firefox/104.0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:104.0) Gecko/20100101 Firefox/104.0") // change to your own browser agent if you like.
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
