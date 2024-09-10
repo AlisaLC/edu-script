@@ -34,6 +34,7 @@ const AuthToken = "" // take from headers after login.
 
 var mu sync.Mutex
 var wg sync.WaitGroup
+var waitCount int64
 var vaheds = []*VahedRequest{
 	{
 		Action: "add",
@@ -54,18 +55,21 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	time.Sleep(delay)
-	waitCount := 5
-	if len(vaheds) > waitCount {
-		waitCount = len(vaheds)
+	if delay > 0 {
+		time.Sleep(delay)
 	}
+	waitCount = 5
 	for {
+		if len(vaheds) == 0 {
+			break
+		}
 		for _, vahed := range vaheds {
 			wg.Add(1)
 			go reqToEdu(client, vahed)
 		}
 		wg.Wait()
 		time.Sleep(time.Duration(waitCount) * time.Second)
+		waitCount = 5
 	}
 }
 
@@ -88,7 +92,9 @@ func findTimeDiff(client *http.Client) (time.Duration, error) {
 		register_time = time.Date(server_time.Year(), server_time.Month(), server_time.Day(), 16, 0, 0, 0, server_time.Location())
 	}
 	delay := register_time.Sub(server_time) + time_diff + time.Millisecond*100 // 100 ms for net lag
-	fmt.Println("Wait Time Until Start", delay)
+	if delay > 0 {
+		fmt.Println("Wait Time Until Start", delay)
+	}
 	return delay, nil
 }
 
@@ -108,9 +114,17 @@ func reqToEdu(client *http.Client, request *VahedRequest) {
 		return
 	}
 	if len(resp.Jobs) > 0 {
-		for _, job := range resp.Jobs {
+		for i := len(resp.Jobs) - 1; i >= 0; i-- {
+			job := resp.Jobs[i]
 			if job.ID == request.Course {
 				fmt.Println(job.ID, job.Result)
+				if job.Result == "OK" || job.Result == "COURSE_DUPLICATE" {
+					for j := len(vaheds) - 1; j >= 0; j-- {
+						if vaheds[j].Course == job.ID {
+							vaheds = append(vaheds[:j], vaheds[j+1:]...)
+						}
+					}
+				}
 				break
 			}
 		}
@@ -152,20 +166,25 @@ func parseResponse(res *http.Response) (*VahedResponse, error) {
 		io.Copy(responseBuf, res.Body)
 	}
 	defer res.Body.Close()
+	out := responseBuf.String()
+	if out[0] == '<' {
+		waitCount = 7
+		return nil, fmt.Errorf("TOO_MANY_REQUESTS")
+	}
 	err := json.Unmarshal(responseBuf.Bytes(), &Resp)
 	if err != nil {
 		if strings.Contains(responseBuf.String(), "REPEATED_REQUEST") {
-			fmt.Println("REPEATED_REQUEST")
-			time.Sleep(5 * time.Second)
-		} else if strings.Contains(responseBuf.String(), "MAAREF_COURSES_LIMIT") {
-			fmt.Println("MAAREF_COURSES_LIMIT")
-			time.Sleep(5 * time.Second)
-		} else if strings.Contains(responseBuf.String(), "CAPACITY_EXCEEDED") {
-			fmt.Println("CAPACITY_EXCEEDED")
-			time.Sleep(5 * time.Second)
-		} else if strings.Contains(responseBuf.String(), "COURSE_NOT_FOUND") {
-			fmt.Println("COURSE_NOT_FOUND")
-			time.Sleep(5 * time.Second)
+			waitCount = 7
+			return nil, fmt.Errorf("REPEATED_REQUEST")
+		}
+		if strings.Contains(responseBuf.String(), "MAAREF_COURSES_LIMIT") {
+			return nil, fmt.Errorf("MAAREF_COURSES_LIMIT")
+		}
+		if strings.Contains(responseBuf.String(), "CAPACITY_EXCEEDED") {
+			return nil, fmt.Errorf("CAPACITY_EXCEEDED")
+		}
+		if strings.Contains(responseBuf.String(), "COURSE_NOT_FOUND") {
+			return nil, fmt.Errorf("COURSE_NOT_FOUND")
 		}
 		return nil, err
 	}
